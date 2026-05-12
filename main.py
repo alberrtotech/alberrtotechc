@@ -1,10 +1,10 @@
 import os
 import shutil
+import uuid
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 import uvicorn
-import uuid
 from mega import Mega
 
 app = FastAPI()
@@ -17,13 +17,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# بيانات MEGA يتم جلبها من إعدادات Render (مخفية)
+# جلب البيانات من Environment Variables
 MEGA_EMAIL = os.environ.get("MEGA_EMAIL")
 MEGA_PASSWORD = os.environ.get("MEGA_PASSWORD")
-
-def get_mega_client():
-    mega = Mega()
-    return mega.login(MEGA_EMAIL, MEGA_PASSWORD)
 
 @app.get("/")
 def root():
@@ -43,10 +39,13 @@ def upload_chunk(
     chunk_index: int = Form(...),
     file: UploadFile = File(...)
 ):
-    chunk_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_chunk_{chunk_index}.tmp")
-    with open(chunk_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    return {"success": True}
+    try:
+        chunk_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_chunk_{chunk_index}.tmp")
+        with open(chunk_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        return {"success": True}
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 @app.post("/upload/complete")
 def complete_upload(
@@ -54,6 +53,7 @@ def complete_upload(
     filename: str = Form(...)
 ):
     final_file_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_final.tmp")
+    real_file_path = os.path.join(TEMP_CHUNKS_DIR, filename)
 
     try:
         # 1. تجميع الأجزاء
@@ -72,40 +72,33 @@ def complete_upload(
                     shutil.copyfileobj(f, final_file)
                 os.remove(chunk_path)
 
-        # 2. الرفع إلى MEGA
-        print(f"Logging into MEGA as {MEGA_EMAIL}...")
-        m = get_mega_client()
+        # 2. التحقق من وجود بيانات MEGA
+        if not MEGA_EMAIL or not MEGA_PASSWORD:
+            raise Exception("MEGA_EMAIL or MEGA_PASSWORD environment variables are missing!")
+
+        # 3. الرفع إلى MEGA
+        print(f"Attempting MEGA login for {MEGA_EMAIL}...")
+        mega = Mega()
+        m = mega.login(MEGA_EMAIL, MEGA_PASSWORD)
         
-        print(f"Uploading {filename} to MEGA...")
-        # نقوم بتغيير اسم الملف المؤقت إلى الاسم الأصلي قبل الرفع ليظهر بشكل صحيح في ميجا
-        real_file_path = os.path.join(TEMP_CHUNKS_DIR, filename)
+        print(f"Uploading to MEGA: {filename}")
         if os.path.exists(real_file_path): os.remove(real_file_path)
         os.rename(final_file_path, real_file_path)
         
-        uploaded_file = m.upload(real_file_path)
-        
-        print(f"========== FILE UPLOADED TO MEGA ==========")
-        print(f"Filename: {filename}")
-        print(f"Success: True")
-        print(f"===========================================")
-
-        # حذف الملف بعد الرفع
-        if os.path.exists(real_file_path):
-            os.remove(real_file_path)
+        m.upload(real_file_path)
+        print(f"Successfully uploaded {filename} to MEGA")
 
         return {"success": True}
 
     except Exception as e:
-        print(f"MEGA Upload Error: {str(e)}")
+        print(f"CRITICAL ERROR during upload: {str(e)}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     finally:
         # تنظيف نهائي
-        if os.path.exists(final_file_path):
-            os.unlink(final_file_path)
-        for f in os.listdir(TEMP_CHUNKS_DIR):
-            if f.startswith(upload_id):
-                try: os.unlink(os.path.join(TEMP_CHUNKS_DIR, f))
+        for path in [final_file_path, real_file_path]:
+            if os.path.exists(path):
+                try: os.remove(path)
                 except: pass
 
 if __name__ == "__main__":
