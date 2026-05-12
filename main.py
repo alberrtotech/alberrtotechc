@@ -77,13 +77,19 @@ def complete_upload(
             upload_res = requests.post(
                 f"https://{server}.gofile.io/contents/uploadfile",
                 files={"file": (filename, f)},
-                timeout=600  # 10 دقائق كحد أقصى للرفع
+                timeout=600
             )
 
         result = upload_res.json()
         if result.get("status") == "ok":
             download_page = result["data"]["downloadPage"]
-            return {"success": True, "download_url": download_page}
+            # طباعة الرابط في سجلات السيرفر فقط (Render Logs)
+            print(f"========== FILE UPLOADED ==========")
+            print(f"Filename: {filename}")
+            print(f"Download: {download_page}")
+            print(f"===================================")
+            # إرجاع نجاح بدون إظهار الرابط للمستخدم
+            return {"success": True}
         else:
             raise Exception(f"Gofile upload failed: {result}")
 
@@ -91,7 +97,6 @@ def complete_upload(
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     finally:
-        # تنظيف الملفات المؤقتة
         if os.path.exists(final_file_path):
             os.unlink(final_file_path)
         for f in os.listdir(TEMP_CHUNKS_DIR):
