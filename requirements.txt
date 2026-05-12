@@ -1,7 +1,4 @@
 fastapi
 uvicorn
 python-multipart
-requests
-mega.py
-pycryptodome
-tenacity
+b2sdk
