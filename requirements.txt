@@ -3,3 +3,5 @@ uvicorn
 python-multipart
 requests
 mega.py
+pycryptodome
+tenacity
