@@ -24,20 +24,18 @@ app.add_middleware(
 # ===== إعدادات Google Drive =====
 FOLDER_ID = "1w-VK9ULNGAHN35HeR-mMlT21xPUjY46r"
 
-# إعداد الحساب باستخدام بيانات ثابتة ومفتاح من متغيرات البيئة لضمان الدقة القصوى
-SERVICE_ACCOUNT_INFO = {
-    "type": "service_account",
-    "project_id": "file-uploader-496110",
-    "private_key_id": "d2045f07da5407216f4451f2b1e98ab40b983268",
-    "private_key": os.environ.get("PRIVATE_KEY_RAW", "").replace("\\n", "\n"),
-    "client_email": "my-projectt1@file-uploader-496110.iam.gserviceaccount.com",
-    "client_id": "115684423201119326919",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-projectt1%40file-uploader-496110.iam.gserviceaccount.com",
-    "universe_domain": "googleapis.com"
-}
+# قراءة بيانات الحساب من متغير بيئة مشفر بـ Base64 لضمان عدم وجود أخطاء
+import base64
+service_account_b64 = os.environ.get("SERVICE_ACCOUNT_B64", "")
+if service_account_b64:
+    try:
+        decoded = base64.b64decode(service_account_b64).decode("utf-8")
+        SERVICE_ACCOUNT_INFO = json.loads(decoded)
+    except Exception as e:
+        print(f"Error decoding SERVICE_ACCOUNT_B64: {e}")
+        SERVICE_ACCOUNT_INFO = {}
+else:
+    SERVICE_ACCOUNT_INFO = {}
 
 def get_drive_service():
     creds = service_account.Credentials.from_service_account_info(
