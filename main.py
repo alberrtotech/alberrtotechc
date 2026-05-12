@@ -1,11 +1,15 @@
 import os
+import json
 import shutil
-import uuid
+import base64
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 import uvicorn
-from mega import Mega
+import uuid
 
 app = FastAPI()
 
@@ -17,9 +21,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# جلب البيانات من Environment Variables
-MEGA_EMAIL = os.environ.get("MEGA_EMAIL")
-MEGA_PASSWORD = os.environ.get("MEGA_PASSWORD")
+# ===== إعدادات Google Drive =====
+FOLDER_ID = "1w-VK9ULNGAHN35HeR-mMlT21xPUjY46r"
+
+# قراءة بيانات الحساب من Base64
+service_account_b64 = os.environ.get("SERVICE_ACCOUNT_B64", "")
+if service_account_b64:
+    try:
+        decoded = base64.b64decode(service_account_b64).decode("utf-8")
+        SERVICE_ACCOUNT_INFO = json.loads(decoded)
+    except Exception as e:
+        print(f"Error decoding SERVICE_ACCOUNT_B64: {e}")
+        SERVICE_ACCOUNT_INFO = {}
+else:
+    SERVICE_ACCOUNT_INFO = {}
+
+def get_drive_service():
+    creds = service_account.Credentials.from_service_account_info(
+        SERVICE_ACCOUNT_INFO,
+        scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    return build("drive", "v3", credentials=creds)
 
 @app.get("/")
 def root():
@@ -39,13 +61,10 @@ def upload_chunk(
     chunk_index: int = Form(...),
     file: UploadFile = File(...)
 ):
-    try:
-        chunk_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_chunk_{chunk_index}.tmp")
-        with open(chunk_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        return {"success": True}
-    except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+    chunk_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_chunk_{chunk_index}.tmp")
+    with open(chunk_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"success": True}
 
 @app.post("/upload/complete")
 def complete_upload(
@@ -53,10 +72,8 @@ def complete_upload(
     filename: str = Form(...)
 ):
     final_file_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_final.tmp")
-    real_file_path = os.path.join(TEMP_CHUNKS_DIR, filename)
 
     try:
-        # 1. تجميع الأجزاء
         chunks = sorted(
             [f for f in os.listdir(TEMP_CHUNKS_DIR) if f.startswith(f"{upload_id}_chunk_")],
             key=lambda x: int(x.split("_chunk_")[1].split(".")[0])
@@ -72,33 +89,27 @@ def complete_upload(
                     shutil.copyfileobj(f, final_file)
                 os.remove(chunk_path)
 
-        # 2. التحقق من وجود بيانات MEGA
-        if not MEGA_EMAIL or not MEGA_PASSWORD:
-            raise Exception("MEGA_EMAIL or MEGA_PASSWORD environment variables are missing!")
+        service = get_drive_service()
+        file_metadata = {"name": filename, "parents": [FOLDER_ID]}
+        media = MediaFileUpload(final_file_path, mimetype="application/octet-stream", resumable=True, chunksize=5*1024*1024)
+        uploaded = service.files().create(body=file_metadata, media_body=media, fields="id,name").execute()
 
-        # 3. الرفع إلى MEGA
-        print(f"Attempting MEGA login for {MEGA_EMAIL}...")
-        mega = Mega()
-        m = mega.login(MEGA_EMAIL, MEGA_PASSWORD)
-        
-        print(f"Uploading to MEGA: {filename}")
-        if os.path.exists(real_file_path): os.remove(real_file_path)
-        os.rename(final_file_path, real_file_path)
-        
-        m.upload(real_file_path)
-        print(f"Successfully uploaded {filename} to MEGA")
+        print(f"========== FILE UPLOADED TO GOOGLE DRIVE ==========")
+        print(f"Filename: {filename}")
+        print(f"File ID: {uploaded.get('id')}")
+        print(f"===================================================")
 
         return {"success": True}
 
     except Exception as e:
-        print(f"CRITICAL ERROR during upload: {str(e)}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     finally:
-        # تنظيف نهائي
-        for path in [final_file_path, real_file_path]:
-            if os.path.exists(path):
-                try: os.remove(path)
+        if os.path.exists(final_file_path):
+            os.unlink(final_file_path)
+        for f in os.listdir(TEMP_CHUNKS_DIR):
+            if f.startswith(upload_id):
+                try: os.unlink(os.path.join(TEMP_CHUNKS_DIR, f))
                 except: pass
 
 if __name__ == "__main__":
