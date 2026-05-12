@@ -1,15 +1,11 @@
 import os
-import json
 import shutil
-import base64
+import uuid
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 import uvicorn
-import uuid
+from b2sdk.v2 import InMemoryAccountInfo, B2Api
 
 app = FastAPI()
 
@@ -21,27 +17,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===== إعدادات Google Drive =====
-FOLDER_ID = "1w-VK9ULNGAHN35HeR-mMlT21xPUjY46r"
+# إعدادات Backblaze B2 (يتم جلبها من Render Environment Variables)
+B2_KEY_ID = os.environ.get("B2_KEY_ID")
+B2_APPLICATION_KEY = os.environ.get("B2_APPLICATION_KEY")
+B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME")
 
-# قراءة بيانات الحساب من Base64
-service_account_b64 = os.environ.get("SERVICE_ACCOUNT_B64", "")
-if service_account_b64:
-    try:
-        decoded = base64.b64decode(service_account_b64).decode("utf-8")
-        SERVICE_ACCOUNT_INFO = json.loads(decoded)
-    except Exception as e:
-        print(f"Error decoding SERVICE_ACCOUNT_B64: {e}")
-        SERVICE_ACCOUNT_INFO = {}
-else:
-    SERVICE_ACCOUNT_INFO = {}
-
-def get_drive_service():
-    creds = service_account.Credentials.from_service_account_info(
-        SERVICE_ACCOUNT_INFO,
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
-    return build("drive", "v3", credentials=creds)
+def get_b2_api():
+    info = InMemoryAccountInfo()
+    b2_api = B2Api(info)
+    if B2_KEY_ID and B2_APPLICATION_KEY:
+        b2_api.authorize_account("production", B2_KEY_ID, B2_APPLICATION_KEY)
+    return b2_api
 
 @app.get("/")
 def root():
@@ -74,6 +60,7 @@ def complete_upload(
     final_file_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_final.tmp")
 
     try:
+        # 1. تجميع الأجزاء
         chunks = sorted(
             [f for f in os.listdir(TEMP_CHUNKS_DIR) if f.startswith(f"{upload_id}_chunk_")],
             key=lambda x: int(x.split("_chunk_")[1].split(".")[0])
@@ -89,22 +76,33 @@ def complete_upload(
                     shutil.copyfileobj(f, final_file)
                 os.remove(chunk_path)
 
-        service = get_drive_service()
-        file_metadata = {"name": filename, "parents": [FOLDER_ID]}
-        media = MediaFileUpload(final_file_path, mimetype="application/octet-stream", resumable=True, chunksize=5*1024*1024)
-        uploaded = service.files().create(body=file_metadata, media_body=media, fields="id,name").execute()
+        # 2. الرفع إلى Backblaze B2
+        if not all([B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET_NAME]):
+            raise Exception("Missing Backblaze B2 credentials. Please set B2_KEY_ID, B2_APPLICATION_KEY, and B2_BUCKET_NAME in Render.")
 
-        print(f"========== FILE UPLOADED TO GOOGLE DRIVE ==========")
+        b2_api = get_b2_api()
+        bucket = b2_api.get_bucket_by_name(B2_BUCKET_NAME)
+        
+        print(f"Uploading {filename} to Backblaze B2 bucket: {B2_BUCKET_NAME}...")
+        
+        uploaded_file = bucket.upload_local_file(
+            local_file=final_file_path,
+            file_name=filename
+        )
+        
+        print(f"========== FILE UPLOADED TO BACKBLAZE ==========")
         print(f"Filename: {filename}")
-        print(f"File ID: {uploaded.get('id')}")
-        print(f"===================================================")
+        print(f"File ID: {uploaded_file.id_}")
+        print(f"================================================")
 
         return {"success": True}
 
     except Exception as e:
+        print(f"Upload Error: {str(e)}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     finally:
+        # تنظيف نهائي
         if os.path.exists(final_file_path):
             os.unlink(final_file_path)
         for f in os.listdir(TEMP_CHUNKS_DIR):
