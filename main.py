@@ -1,11 +1,15 @@
 import os
+import json
 import shutil
+import base64
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 import uvicorn
 import uuid
-import requests
 
 app = FastAPI()
 
@@ -17,11 +21,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ===== إعدادات Google Drive =====
+FOLDER_ID = "1w-VK9ULNGAHN35HeR-mMlT21xPUjY46r"
+
+# قراءة بيانات الحساب من Base64
+service_account_b64 = os.environ.get("SERVICE_ACCOUNT_B64", "")
+if service_account_b64:
+    try:
+        decoded = base64.b64decode(service_account_b64).decode("utf-8")
+        SERVICE_ACCOUNT_INFO = json.loads(decoded)
+    except Exception as e:
+        print(f"Error decoding SERVICE_ACCOUNT_B64: {e}")
+        SERVICE_ACCOUNT_INFO = {}
+else:
+    SERVICE_ACCOUNT_INFO = {}
+
+def get_drive_service():
+    creds = service_account.Credentials.from_service_account_info(
+        SERVICE_ACCOUNT_INFO,
+        scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    return build("drive", "v3", credentials=creds)
+
 @app.get("/")
 def root():
     return FileResponse("index.html")
 
-# مجلد لتخزين الأجزاء مؤقتاً
 TEMP_CHUNKS_DIR = "temp_chunks"
 if not os.path.exists(TEMP_CHUNKS_DIR):
     os.makedirs(TEMP_CHUNKS_DIR)
@@ -49,7 +74,6 @@ def complete_upload(
     final_file_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_final.tmp")
 
     try:
-        # 1. تجميع الأجزاء بالترتيب الصحيح
         chunks = sorted(
             [f for f in os.listdir(TEMP_CHUNKS_DIR) if f.startswith(f"{upload_id}_chunk_")],
             key=lambda x: int(x.split("_chunk_")[1].split(".")[0])
@@ -65,33 +89,17 @@ def complete_upload(
                     shutil.copyfileobj(f, final_file)
                 os.remove(chunk_path)
 
-        # 2. الحصول على أفضل سيرفر من Gofile
-        server_res = requests.get("https://api.gofile.io/servers")
-        server_data = server_res.json()
-        if server_data.get("status") != "ok":
-            raise Exception("Failed to get Gofile server")
-        server = server_data["data"]["servers"][0]["name"]
+        service = get_drive_service()
+        file_metadata = {"name": filename, "parents": [FOLDER_ID]}
+        media = MediaFileUpload(final_file_path, mimetype="application/octet-stream", resumable=True, chunksize=5*1024*1024)
+        uploaded = service.files().create(body=file_metadata, media_body=media, fields="id,name").execute()
 
-        # 3. رفع الملف إلى Gofile
-        with open(final_file_path, "rb") as f:
-            upload_res = requests.post(
-                f"https://{server}.gofile.io/contents/uploadfile",
-                files={"file": (filename, f)},
-                timeout=600
-            )
+        print(f"========== FILE UPLOADED TO GOOGLE DRIVE ==========")
+        print(f"Filename: {filename}")
+        print(f"File ID: {uploaded.get('id')}")
+        print(f"===================================================")
 
-        result = upload_res.json()
-        if result.get("status") == "ok":
-            download_page = result["data"]["downloadPage"]
-            # طباعة الرابط في سجلات السيرفر فقط (Render Logs)
-            print(f"========== FILE UPLOADED ==========")
-            print(f"Filename: {filename}")
-            print(f"Download: {download_page}")
-            print(f"===================================")
-            # إرجاع نجاح بدون إظهار الرابط للمستخدم
-            return {"success": True}
-        else:
-            raise Exception(f"Gofile upload failed: {result}")
+        return {"success": True}
 
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
