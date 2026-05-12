@@ -1,15 +1,11 @@
 import os
-import json
 import shutil
-import tempfile
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 import uvicorn
 import uuid
+import requests
 
 app = FastAPI()
 
@@ -20,29 +16,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ===== إعدادات Google Drive =====
-FOLDER_ID = "1_daP8R01xL-Lt5MvzC1jmFZ6hglP8V2o"
-
-# قراءة بيانات الحساب من متغير بيئة مشفر بـ Base64 لضمان عدم وجود أخطاء
-import base64
-service_account_b64 = os.environ.get("SERVICE_ACCOUNT_B64", "")
-if service_account_b64:
-    try:
-        decoded = base64.b64decode(service_account_b64).decode("utf-8")
-        SERVICE_ACCOUNT_INFO = json.loads(decoded)
-    except Exception as e:
-        print(f"Error decoding SERVICE_ACCOUNT_B64: {e}")
-        SERVICE_ACCOUNT_INFO = {}
-else:
-    SERVICE_ACCOUNT_INFO = {}
-
-def get_drive_service():
-    creds = service_account.Credentials.from_service_account_info(
-        SERVICE_ACCOUNT_INFO,
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
-    return build("drive", "v3", credentials=creds)
 
 @app.get("/")
 def root():
@@ -55,7 +28,6 @@ if not os.path.exists(TEMP_CHUNKS_DIR):
 
 @app.post("/upload/start")
 def start_upload():
-    # إنشاء معرف فريد للجلسة
     return {"upload_id": str(uuid.uuid4())}
 
 @app.post("/upload/chunk")
@@ -64,7 +36,6 @@ def upload_chunk(
     chunk_index: int = Form(...),
     file: UploadFile = File(...)
 ):
-    # حفظ كل جزء في ملف مستقل لتجنب تداخل الترتيب
     chunk_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_chunk_{chunk_index}.tmp")
     with open(chunk_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -76,14 +47,14 @@ def complete_upload(
     filename: str = Form(...)
 ):
     final_file_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_final.tmp")
-    
+
     try:
-        # 1. تجميع الأجزاء بالترتيب الصحيح بناءً على الرقم
+        # 1. تجميع الأجزاء بالترتيب الصحيح
         chunks = sorted(
             [f for f in os.listdir(TEMP_CHUNKS_DIR) if f.startswith(f"{upload_id}_chunk_")],
             key=lambda x: int(x.split("_chunk_")[1].split(".")[0])
         )
-        
+
         if not chunks:
             return JSONResponse({"success": False, "error": "No chunks found"}, status_code=404)
 
@@ -92,33 +63,35 @@ def complete_upload(
                 chunk_path = os.path.join(TEMP_CHUNKS_DIR, chunk_file)
                 with open(chunk_path, "rb") as f:
                     shutil.copyfileobj(f, final_file)
-                os.remove(chunk_path) # حذف الجزء فوراً بعد دمج توفيراً للمساحة
+                os.remove(chunk_path)
 
-        # 2. رفع الملف النهائي لـ Google Drive
-        service = get_drive_service()
-        file_metadata = {
-            "name": filename,
-            "parents": [FOLDER_ID]
-        }
-        media = MediaFileUpload(
-            final_file_path,
-            mimetype="application/octet-stream",
-            resumable=True,
-            chunksize=5 * 1024 * 1024
-        )
-        uploaded = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id,name"
-        ).execute()
+        # 2. الحصول على أفضل سيرفر من Gofile
+        server_res = requests.get("https://api.gofile.io/servers")
+        server_data = server_res.json()
+        if server_data.get("status") != "ok":
+            raise Exception("Failed to get Gofile server")
+        server = server_data["data"]["servers"][0]["name"]
 
-        return {"success": True, "file_id": uploaded.get("id")}
-    
+        # 3. رفع الملف إلى Gofile
+        with open(final_file_path, "rb") as f:
+            upload_res = requests.post(
+                f"https://{server}.gofile.io/contents/uploadfile",
+                files={"file": (filename, f)},
+                timeout=600  # 10 دقائق كحد أقصى للرفع
+            )
+
+        result = upload_res.json()
+        if result.get("status") == "ok":
+            download_page = result["data"]["downloadPage"]
+            return {"success": True, "download_url": download_page}
+        else:
+            raise Exception(f"Gofile upload failed: {result}")
+
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-    
+
     finally:
-        # تنظيف أي ملفات متبقية (سواء نجح الرفع أو فشل)
+        # تنظيف الملفات المؤقتة
         if os.path.exists(final_file_path):
             os.unlink(final_file_path)
         for f in os.listdir(TEMP_CHUNKS_DIR):
